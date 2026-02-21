@@ -11,32 +11,36 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.firestore();
 
-  let map;
+  let map = null;
   let markers = {};
 
-  // Crear mapa al cargar
-  window.onload = function () {
+  // 🔥 Crear mapa cuando Google esté listo
+  window.addEventListener("load", function () {
     map = new google.maps.Map(document.getElementById("map"), {
       center: { lat: 0, lng: 0 },
       zoom: 2,
     });
-  };
 
-  // 🔥 Escuchar TODOS los dispositivos en tiempo real
-  db.collection("locations").onSnapshot((snapshot) => {
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-      const position = { lat: data.lat, lng: data.lng };
+    // 🔥 Listener en tiempo real (dentro de load para asegurar que map existe)
+    db.collection("locations").onSnapshot((snapshot) => {
 
-      if (markers[doc.id]) {
-        markers[doc.id].setPosition(position);
-      } else {
-        markers[doc.id] = new google.maps.Marker({
-          position: position,
-          map: map,
-          label: doc.id.substring(0, 4)
-        });
-      }
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (!data.lat || !data.lng) return;
+
+        const position = { lat: data.lat, lng: data.lng };
+
+        if (markers[doc.id]) {
+          markers[doc.id].setPosition(position);
+        } else {
+          markers[doc.id] = new google.maps.Marker({
+            position: position,
+            map: map,
+            label: doc.id.substring(0, 4)
+          });
+        }
+      });
+
     });
   });
 
@@ -45,6 +49,11 @@
 
     const status = document.getElementById("status");
     status.innerText = "Solicitando ubicación...";
+
+    if (!navigator.geolocation) {
+      status.innerText = "❌ Geolocalización no soportada.";
+      return;
+    }
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
@@ -65,11 +74,14 @@
 
         status.innerText = `✅ Ubicación enviada: ${lat}, ${lng}`;
 
-        map.setCenter({ lat, lng });
-        map.setZoom(15);
+        if (map) {
+          map.setCenter({ lat, lng });
+          map.setZoom(15);
+        }
 
       },
-      () => {
+      (error) => {
+        console.error(error);
         status.innerText = "❌ Error obteniendo ubicación.";
       },
       {
@@ -79,6 +91,3 @@
     );
   }
 </script>
-
-
-
