@@ -2,19 +2,32 @@
 <html>
 <head>
   <title>Torre Control GPS</title>
+  <style>
+    #map {
+      height: 400px;
+      width: 100%;
+      margin-top: 20px;
+    }
+  </style>
 </head>
 <body>
 
   <h2>Torre de Control - Seguimiento GPS</h2>
   <button onclick="startTracking()">Iniciar seguimiento</button>
   <p id="status"></p>
+  <div id="map"></div>
+
+  <!-- Google Maps -->
+  <script async
+    src="https://maps.googleapis.com/maps/api/js?key=TU_API_KEY_AQUI&callback=initMap">
+  </script>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     const firebaseConfig = {
-      apiKey: "AIzaSyBQw9PUFPMny8jAHnjEAjnQS7Qo8dvEIfw",
+      apiKey: "AIzaSyCqZxn8KkdP6VXA7_v-zRRImEuOy964yas",
       authDomain: "torrecontrolmvp.firebaseapp.com",
       projectId: "torrecontrolmvp",
       storageBucket: "torrecontrolmvp.firebasestorage.app",
@@ -24,6 +37,16 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+
+    let map;
+    let marker;
+
+    window.initMap = function () {
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: 0, lng: 0 },
+        zoom: 2,
+      });
+    };
 
     window.startTracking = function () {
 
@@ -48,6 +71,21 @@
             });
 
             status.innerText = `✅ Ubicación enviada: ${lat}, ${lng}`;
+
+            const newPosition = { lat: lat, lng: lng };
+
+            map.setCenter(newPosition);
+            map.setZoom(15);
+
+            if (marker) {
+              marker.setPosition(newPosition);
+            } else {
+              marker = new google.maps.Marker({
+                position: newPosition,
+                map: map,
+                title: "Ubicación actual"
+              });
+            }
 
           } catch (error) {
             status.innerText = "❌ Error enviando a Firebase.";
