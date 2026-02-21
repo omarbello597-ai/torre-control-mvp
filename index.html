@@ -26,22 +26,57 @@
     const db = getFirestore(app);
 
     window.startTracking = function () {
-      document.getElementById("status").innerText = "Solicitando ubicación...";
 
-      navigator.geolocation.getCurrentPosition(async (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
+      const status = document.getElementById("status");
+      status.innerText = "Solicitando ubicación...";
 
-        await setDoc(doc(db, "locations", "test"), {
-          lat: lat,
-          lng: lng,
-          timestamp: new Date()
-        });
+      if (!navigator.geolocation) {
+        status.innerText = "Este navegador no soporta geolocalización.";
+        return;
+      }
 
-        document.getElementById("status").innerText =
-          `Ubicación enviada: ${lat}, ${lng}`;
-      });
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          try {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+
+            await setDoc(doc(db, "locations", "test"), {
+              lat: lat,
+              lng: lng,
+              timestamp: new Date()
+            });
+
+            status.innerText = `✅ Ubicación enviada: ${lat}, ${lng}`;
+
+          } catch (error) {
+            status.innerText = "❌ Error enviando a Firebase.";
+            console.error(error);
+          }
+        },
+        (error) => {
+          switch (error.code) {
+            case error.PERMISSION_DENIED:
+              status.innerText = "❌ Permiso de ubicación denegado.";
+              break;
+            case error.POSITION_UNAVAILABLE:
+              status.innerText = "❌ Ubicación no disponible.";
+              break;
+            case error.TIMEOUT:
+              status.innerText = "⏳ Tiempo de espera agotado.";
+              break;
+            default:
+              status.innerText = "❌ Error desconocido.";
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
     };
+
   </script>
 
 </body>
