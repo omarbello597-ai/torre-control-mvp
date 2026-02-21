@@ -49,17 +49,23 @@
         status.innerText = "Este navegador no soporta geolocalización.";
         return;
       }
+navigator.geolocation.getCurrentPosition(
+  async (position) => {
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
 
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
+    // 🔥 Generar ID único por dispositivo
+    const deviceId = localStorage.getItem("deviceId") 
+      || crypto.randomUUID();
 
-          await db.collection("locations").doc("test").set({
-            lat: lat,
-            lng: lng,
-            timestamp: new Date()
-          });
+    localStorage.setItem("deviceId", deviceId);
+
+    await db.collection("locations").doc(deviceId).set({
+      lat: lat,
+      lng: lng,
+      timestamp: new Date()
+    });
+      
 
           status.innerText = `✅ Ubicación enviada: ${lat}, ${lng}`;
 
@@ -98,5 +104,6 @@
 
 </body>
 </html>
+
 
 
