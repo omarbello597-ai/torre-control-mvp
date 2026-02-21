@@ -1,129 +1,84 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Torre Control GPS</title>
-  <style>
-    #map {
-      height: 400px;
-      width: 100%;
-      margin-top: 20px;
-    }
-  </style>
-</head>
-<body>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyBQw9PUFPMny8jAHnjEAjnQS7Qo8dvEIfw",
+    authDomain: "torrecontrolmvp.firebaseapp.com",
+    projectId: "torrecontrolmvp",
+    storageBucket: "torrecontrolmvp.firebasestorage.app",
+    messagingSenderId: "1091567628359",
+    appId: "1:1091567628359:web:327f4938ecbe2622aac162"
+  };
 
-  <h2>Torre de Control - Seguimiento GPS</h2>
-  <button onclick="startTracking()">Iniciar seguimiento</button>
-  <p id="status"></p>
-  <div id="map"></div>
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
 
-  <!-- Google Maps -->
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDwgCjC6tC56l1xEGHwW3vzXtLM2nXR7ck"></script>
+  let map;
+  let markers = {};
 
-  <!-- Firebase SDKs clásicos -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-
-  <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyBQw9PUFPMny8jAHnjEAjnQS7Qo8dvEIfw",
-      authDomain: "torrecontrolmvp.firebaseapp.com",
-      projectId: "torrecontrolmvp",
-      storageBucket: "torrecontrolmvp.firebasestorage.app",
-      messagingSenderId: "1091567628359",
-      appId: "1:1091567628359:web:327f4938ecbe2622aac162"
-    };
-
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-
-    let map;
-    let marker;
-    
-    let markers = {};
-
-db.collection("locations").onSnapshot((snapshot) => {
-  snapshot.forEach((doc) => {
-    const data = doc.data();
-    const position = { lat: data.lat, lng: data.lng };
-
-    if (markers[doc.id]) {
-      // Si el marcador ya existe, solo lo movemos
-      markers[doc.id].setPosition(position);
-    } else {
-      // Si no existe, lo creamos
-      markers[doc.id] = new google.maps.Marker({
-        position: position,
-        map: map,
-        label: doc.id.substring(0, 4)
-      });
-    }
-
-    function startTracking() {
-
-      const status = document.getElementById("status");
-      status.innerText = "Solicitando ubicación...";
-
-      if (!navigator.geolocation) {
-        status.innerText = "Este navegador no soporta geolocalización.";
-        return;
-      }
-navigator.geolocation.getCurrentPosition(
-  async (position) => {
-    const lat = position.coords.latitude;
-    const lng = position.coords.longitude;
-
-    // 🔥 Generar ID único por dispositivo
-    const deviceId = localStorage.getItem("deviceId") 
-      || crypto.randomUUID();
-
-    localStorage.setItem("deviceId", deviceId);
-
-    await db.collection("locations").doc(deviceId).set({
-      lat: lat,
-      lng: lng,
-      timestamp: new Date()
+  // Crear mapa al cargar
+  window.onload = function () {
+    map = new google.maps.Map(document.getElementById("map"), {
+      center: { lat: 0, lng: 0 },
+      zoom: 2,
     });
-      
+  };
 
-          status.innerText = `✅ Ubicación enviada: ${lat}, ${lng}`;
+  // 🔥 Escuchar TODOS los dispositivos en tiempo real
+  db.collection("locations").onSnapshot((snapshot) => {
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      const position = { lat: data.lat, lng: data.lng };
 
-          const newPosition = { lat: lat, lng: lng };
+      if (markers[doc.id]) {
+        markers[doc.id].setPosition(position);
+      } else {
+        markers[doc.id] = new google.maps.Marker({
+          position: position,
+          map: map,
+          label: doc.id.substring(0, 4)
+        });
+      }
+    });
+  });
 
-          if (!map) {
-            map = new google.maps.Map(document.getElementById("map"), {
-              center: newPosition,
-              zoom: 15,
-            });
-          } else {
-            map.setCenter(newPosition);
-          }
+  // 🔥 Función del botón
+  function startTracking() {
 
-          if (!marker) {
-            marker = new google.maps.Marker({
-              position: newPosition,
-              map: map,
-            });
-          } else {
-            marker.setPosition(newPosition);
-          }
+    const status = document.getElementById("status");
+    status.innerText = "Solicitando ubicación...";
 
-        },
-        (error) => {
-          status.innerText = "❌ Error obteniendo ubicación.";
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 30000,
-          maximumAge: 0
-        }
-      );
-    }
-  </script>
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
 
-</body>
-</html>
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
 
+        const deviceId = localStorage.getItem("deviceId") 
+          || crypto.randomUUID();
+
+        localStorage.setItem("deviceId", deviceId);
+
+        await db.collection("locations").doc(deviceId).set({
+          lat: lat,
+          lng: lng,
+          timestamp: new Date()
+        });
+
+        status.innerText = `✅ Ubicación enviada: ${lat}, ${lng}`;
+
+        map.setCenter({ lat, lng });
+        map.setZoom(15);
+
+      },
+      () => {
+        status.innerText = "❌ Error obteniendo ubicación.";
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 30000
+      }
+    );
+  }
+</script>
 
 
 
