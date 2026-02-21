@@ -18,14 +18,13 @@
   <div id="map"></div>
 
   <!-- Google Maps -->
-  <script
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBQw9PUFPMny8jAHnjEAjnQS7Qo8dvEIfw">
-  </script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBQw9PUFPMny8jAHnjEAjnQS7Qo8dvEIfw"></script>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  <!-- Firebase SDKs clásicos -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
+  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyBQw9PUFPMny8jAHnjEAjnQS7Qo8dvEIfw",
       authDomain: "torrecontrolmvp.firebaseapp.com",
@@ -35,20 +34,13 @@
       appId: "1:1091567628359:web:327f4938ecbe2622aac162"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
     let map;
     let marker;
 
-    window.initMap = function () {
-      map = new google.maps.Map(document.getElementById("map"), {
-        center: { lat: 0, lng: 0 },
-        zoom: 2,
-      });
-    };
-
-    window.startTracking = function () {
+    function startTracking() {
 
       const status = document.getElementById("status");
       status.innerText = "Solicitando ubicación...";
@@ -60,52 +52,40 @@
 
       navigator.geolocation.getCurrentPosition(
         async (position) => {
-          try {
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
 
-            await setDoc(doc(db, "locations", "test"), {
-              lat: lat,
-              lng: lng,
-              timestamp: new Date()
+          await db.collection("locations").doc("test").set({
+            lat: lat,
+            lng: lng,
+            timestamp: new Date()
+          });
+
+          status.innerText = `✅ Ubicación enviada: ${lat}, ${lng}`;
+
+          const newPosition = { lat: lat, lng: lng };
+
+          if (!map) {
+            map = new google.maps.Map(document.getElementById("map"), {
+              center: newPosition,
+              zoom: 15,
             });
-
-            status.innerText = `✅ Ubicación enviada: ${lat}, ${lng}`;
-
-            const newPosition = { lat: lat, lng: lng };
-
+          } else {
             map.setCenter(newPosition);
-            map.setZoom(15);
-
-            if (marker) {
-              marker.setPosition(newPosition);
-            } else {
-              marker = new google.maps.Marker({
-                position: newPosition,
-                map: map,
-                title: "Ubicación actual"
-              });
-            }
-
-          } catch (error) {
-            status.innerText = "❌ Error enviando a Firebase.";
-            console.error(error);
           }
+
+          if (!marker) {
+            marker = new google.maps.Marker({
+              position: newPosition,
+              map: map,
+            });
+          } else {
+            marker.setPosition(newPosition);
+          }
+
         },
         (error) => {
-          switch (error.code) {
-            case error.PERMISSION_DENIED:
-              status.innerText = "❌ Permiso de ubicación denegado.";
-              break;
-            case error.POSITION_UNAVAILABLE:
-              status.innerText = "❌ Ubicación no disponible.";
-              break;
-            case error.TIMEOUT:
-              status.innerText = "⏳ Tiempo de espera agotado.";
-              break;
-            default:
-              status.innerText = "❌ Error desconocido.";
-          }
+          status.innerText = "❌ Error obteniendo ubicación.";
         },
         {
           enableHighAccuracy: true,
@@ -113,12 +93,8 @@
           maximumAge: 0
         }
       );
-    };
-
+    }
   </script>
 
 </body>
 </html>
-
-
-
