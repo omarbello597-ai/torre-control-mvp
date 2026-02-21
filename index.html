@@ -4,6 +4,7 @@
   <title>Torre Control GPS</title>
 </head>
 <body>
+
   <h2>Torre de Control - Seguimiento GPS</h2>
   <button onclick="startTracking()">Iniciar seguimiento</button>
   <p id="status"></p>
@@ -27,26 +28,21 @@
     window.startTracking = function () {
       document.getElementById("status").innerText = "Solicitando ubicación...";
 
-      if (navigator.geolocation) {
-        setInterval(() => {
-          navigator.geolocation.getCurrentPosition(async (position) => {
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
+      navigator.geolocation.getCurrentPosition(async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
 
-            await setDoc(doc(db, "locations", "test"), {
-              lat: lat,
-              lng: lng,
-              timestamp: Date.now()
-            });
+        await setDoc(doc(db, "locations", "test"), {
+          lat: lat,
+          lng: lng,
+          timestamp: new Date()
+        });
 
-            document.getElementById("status").innerText =
-              "Enviando ubicación: " + lat + ", " + lng;
-          });
-        }, 30000);
-      } else {
-        alert("GPS no soportado");
-      }
+        document.getElementById("status").innerText =
+          `Ubicación enviada: ${lat}, ${lng}`;
+      });
     };
   </script>
+
 </body>
 </html>
