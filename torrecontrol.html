@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Torre Control GPS</title>
+</head>
+<body>
+  <h2>Torre de Control - Seguimiento GPS</h2>
+  <button onclick="startTracking()">Iniciar seguimiento</button>
+  <p id="status"></p>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBQw9PUFPMny8jAHnjEAjnQS7Qo8dvEIfw",
+      authDomain: "torrecontrolmvp.firebaseapp.com",
+      projectId: "torrecontrolmvp",
+      storageBucket: "torrecontrolmvp.firebasestorage.app",
+      messagingSenderId: "1091567628359",
+      appId: "1:1091567628359:web:327f4938ecbe2622aac162"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    window.startTracking = function () {
+      document.getElementById("status").innerText = "Solicitando ubicación...";
+
+      if (navigator.geolocation) {
+        setInterval(() => {
+          navigator.geolocation.getCurrentPosition(async (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+
+            await setDoc(doc(db, "locations", "test"), {
+              lat: lat,
+              lng: lng,
+              timestamp: Date.now()
+            });
+
+            document.getElementById("status").innerText =
+              "Enviando ubicación: " + lat + ", " + lng;
+          });
+        }, 30000);
+      } else {
+        alert("GPS no soportado");
+      }
+    };
+  </script>
+</body>
+</html>
