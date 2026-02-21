@@ -39,6 +39,25 @@
 
     let map;
     let marker;
+    
+    let markers = {};
+
+db.collection("locations").onSnapshot((snapshot) => {
+  snapshot.forEach((doc) => {
+    const data = doc.data();
+    const position = { lat: data.lat, lng: data.lng };
+
+    if (markers[doc.id]) {
+      // Si el marcador ya existe, solo lo movemos
+      markers[doc.id].setPosition(position);
+    } else {
+      // Si no existe, lo creamos
+      markers[doc.id] = new google.maps.Marker({
+        position: position,
+        map: map,
+        label: doc.id.substring(0, 4)
+      });
+    }
 
     function startTracking() {
 
@@ -104,6 +123,7 @@ navigator.geolocation.getCurrentPosition(
 
 </body>
 </html>
+
 
 
 
