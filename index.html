@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Torre Control Comercial</title>
+  <title>Torre Control Comercial - Analítica Pro</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body { margin:0; font-family: Arial; display:flex; }
@@ -13,7 +13,7 @@
       overflow-y:auto;
       border-left:1px solid #ccc;
     }
-    button { padding:8px; margin-bottom:10px; width:100%; }
+    button { padding:8px; margin-bottom:8px; width:100%; }
     .card {
       background:white;
       padding:10px;
@@ -21,6 +21,7 @@
       border-radius:8px;
       box-shadow:0 2px 4px rgba(0,0,0,0.1);
     }
+    h4 { margin-top:20px; }
   </style>
 </head>
 
@@ -30,16 +31,27 @@
 
 <div id="panel">
   <h3>🚀 Torre de Control</h3>
+
   <button onclick="startTracking()">Iniciar seguimiento</button>
   <button onclick="stopTracking()">Detener seguimiento</button>
-  <p id="status">Estado: Esperando...</p>
+
   <hr>
+
+  <h4>📊 Análisis Automático</h4>
+  <div id="analysis"></div>
+
+  <button onclick="exportCSV()">Exportar CSV</button>
+  <button onclick="exportGeoJSON()">Exportar GeoJSON</button>
+
+  <hr>
+
+  <h4>👥 Usuarios</h4>
   <div id="devices"></div>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDwgCjC6tC56l1xEGHwW3vzXtLM2nXR7ck&libraries=geometry"></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDwgCjC6tC56l1xEGHwW3vzXtLM2nXR7ck&libraries=geometry,visualization"></script>
 
 <script>
 
@@ -55,75 +67,48 @@ const db = firebase.firestore();
 let map;
 let markers = {};
 let polylines = {};
-let deviceColors = {};
+let heatmap;
 let distances = {};
 let lastPoints = {};
-let deviceNames = {};
+let heatPoints = [];
 let watchId = null;
 
 const MIN_DISTANCE_METERS = 5;
 
 function initMap() {
   map = new google.maps.Map(document.getElementById("map"), {
-    center:{lat:0,lng:0},
-    zoom:2
+    center:{lat:4.6,lng:-74.1},
+    zoom:6
   });
 }
 
-function generateColorFromId(id) {
-  let hash=0;
-  for(let i=0;i<id.length;i++){
-    hash=id.charCodeAt(i)+((hash<<5)-hash);
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 70%, 50%)`;
-    }
-
-window.onload=function(){
+window.onload = function(){
   initMap();
-  const today=new Date().toISOString().split("T")[0];
+  listenLocations();
+};
+
+function listenLocations(){
+  const today = new Date().toISOString().split("T")[0];
 
   db.collection("locations").onSnapshot(snapshot=>{
 
-    if(snapshot.empty) return;
-
     const bounds = new google.maps.LatLngBounds();
-    let activeUsers = 0;
+    heatPoints = [];
 
     snapshot.forEach(doc=>{
-      const data=doc.data();
-      const pos={lat:data.lat,lng:data.lng};
+      const data = doc.data();
+      const pos = {lat:data.lat,lng:data.lng};
 
-      activeUsers++;
       bounds.extend(pos);
-
-      deviceNames[doc.id] = data.user || "User";
-
-      if(!deviceColors[doc.id])
-        deviceColors[doc.id]=generateColorFromId(doc.id);
-
-      const color=deviceColors[doc.id];
+      heatPoints.push(new google.maps.LatLng(data.lat,data.lng));
 
       if(markers[doc.id]){
         markers[doc.id].setPosition(pos);
-      }else{
-        markers[doc.id]=new google.maps.Marker({
-          position:pos,
-          map:map,
-          title:data.user,
-          label:{
-            text:data.user || "User",
-            fontSize:"12px",
-            fontWeight:"bold"
-          },
-          icon:{
-            path:google.maps.SymbolPath.CIRCLE,
-            scale:8,
-            fillColor:color,
-            fillOpacity:1,
-            strokeColor: "#ffffff",
-            strokeWeight:2
-          }
+      } else {
+        markers[doc.id] = new google.maps.Marker({
+          position: pos,
+          map: map,
+          label: data.user
         });
       }
 
@@ -133,6 +118,7 @@ window.onload=function(){
         .collection(today)
         .orderBy("timestamp")
         .onSnapshot(routeSnap=>{
+
           let path=[];
           let total=0;
           let prev=null;
@@ -140,6 +126,7 @@ window.onload=function(){
           routeSnap.forEach(p=>{
             const pt=p.data();
             path.push({lat:pt.lat,lng:pt.lng});
+
             if(prev){
               total+=google.maps.geometry.spherical.computeDistanceBetween(
                 new google.maps.LatLng(prev.lat,prev.lng),
@@ -153,31 +140,39 @@ window.onload=function(){
 
           if(polylines[doc.id]){
             polylines[doc.id].setPath(path);
-          }else{
+          } else {
             polylines[doc.id]=new google.maps.Polyline({
               path:path,
-              strokeColor:color,
               strokeWeight:3,
               map:map
             });
           }
 
           updatePanel();
+          updateAnalysis();
         });
       }
 
     });
 
-    // ZOOM INTELIGENTE
-    if(activeUsers === 1){
-      map.fitBounds(bounds);
-      setTimeout(()=> map.setZoom(18), 300);
-    } else if(activeUsers > 1){
+    if(!snapshot.empty){
       map.fitBounds(bounds);
     }
 
+    updateHeatmap();
   });
-};
+}
+
+function updateHeatmap(){
+  if(heatmap){
+    heatmap.setMap(null);
+  }
+  heatmap = new google.maps.visualization.HeatmapLayer({
+    data: heatPoints,
+    radius: 30
+  });
+  heatmap.setMap(map);
+}
 
 function updatePanel(){
   const container=document.getElementById("devices");
@@ -185,26 +180,101 @@ function updatePanel(){
   for(let id in distances){
     container.innerHTML+=`
       <div class="card">
-        <b>${deviceNames[id] || id.substring(0,6)}</b><br>
-        Distancia hoy: ${distances[id].toFixed(2)} km
+        <b>${id.substring(0,6)}</b><br>
+        KM hoy: ${distances[id].toFixed(2)}
       </div>`;
   }
+}
+
+function updateAnalysis(){
+  const analysis=document.getElementById("analysis");
+  let totalGeneral=0;
+  let ranking=[];
+
+  for(let id in distances){
+    totalGeneral+=distances[id];
+    ranking.push({id:id,km:distances[id]});
+  }
+
+  ranking.sort((a,b)=>b.km-a.km);
+
+  let html=`Total general: ${totalGeneral.toFixed(2)} km<br>`;
+  html+=`Promedio por usuario: ${(totalGeneral/ranking.length || 0).toFixed(2)} km<br><br>`;
+  html+=`🏆 Ranking:<br>`;
+
+  ranking.forEach(r=>{
+    html+=`${r.id.substring(0,6)} - ${r.km.toFixed(2)} km<br>`;
+  });
+
+  analysis.innerHTML=html;
+}
+
+function exportCSV(){
+  let csv="Usuario,KM\n";
+  for(let id in distances){
+    csv+=`${id},${distances[id].toFixed(2)}\n`;
+  }
+
+  const blob=new Blob([csv],{type:"text/csv"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download="reporte_km.csv";
+  a.click();
+}
+
+async function exportGeoJSON(){
+
+  let features=[];
+
+  for(let id in polylines){
+
+    const path=polylines[id].getPath().getArray();
+    let coordinates=[];
+
+    path.forEach(p=>{
+      coordinates.push([p.lng(),p.lat()]);
+    });
+
+    features.push({
+      type:"Feature",
+      properties:{
+        user:id,
+        total_km:distances[id]
+      },
+      geometry:{
+        type:"LineString",
+        coordinates:coordinates
+      }
+    });
+  }
+
+  const geojson={
+    type:"FeatureCollection",
+    features:features
+  };
+
+  const blob=new Blob(
+    [JSON.stringify(geojson,null,2)],
+    {type:"application/geo+json"}
+  );
+
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download="rutas.geojson";
+  a.click();
 }
 
 function startTracking(){
   const deviceId=localStorage.getItem("deviceId")||crypto.randomUUID();
   localStorage.setItem("deviceId",deviceId);
 
-  let userName=localStorage.getItem("userName");
-  if(!userName){
-    userName=prompt("Ingrese nombre del usuario:");
-    localStorage.setItem("userName",userName);
-  }
-
+  const userName=prompt("Nombre usuario:");
   const today=new Date().toISOString().split("T")[0];
 
   watchId=navigator.geolocation.watchPosition(async pos=>{
-        
+
     const lat=pos.coords.latitude;
     const lng=pos.coords.longitude;
     const now=new Date();
@@ -226,12 +296,14 @@ function startTracking(){
 
     await db.collection("locations")
       .doc(deviceId)
-      .set({lat,lng,timestamp:now,user:userName});
+      .set({lat,lng,user:userName,timestamp:now});
+
   },
   error=>{
-    alert("Error obteniendo ubicación: " + error.message);
+    alert(error.message);
   },
   { enableHighAccuracy:true });
+
 }
 
 function stopTracking(){
@@ -245,7 +317,6 @@ function stopTracking(){
 
 </body>
 </html>
-
 
 
 
