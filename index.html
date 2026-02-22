@@ -204,9 +204,34 @@ function startTracking(){
   const today=new Date().toISOString().split("T")[0];
 
   watchId=navigator.geolocation.watchPosition(async pos=>{
+    console.log("📍 Posición capturada:", pos.coords.latitude, pos.coords.longitude);
+    
     const lat=pos.coords.latitude;
     const lng=pos.coords.longitude;
     const now=new Date();
+
+    try {
+
+    await db.collection("routes")
+      .doc(deviceId)
+      .collection(today)
+      .add({ lat, lng, timestamp: now });
+
+    await db.collection("locations")
+      .doc(deviceId)
+      .set({ lat, lng, timestamp: now, user: userName });
+
+    console.log("✅ Enviado a Firebase correctamente");
+
+  } catch (error) {
+    console.error("❌ Error enviando a Firebase:", error);
+  }
+
+},
+error => {
+  console.error("❌ Error GPS:", error.message);
+},
+{ enableHighAccuracy: true });
 
     if(lastPoints[deviceId]){
       const dist=google.maps.geometry.spherical.computeDistanceBetween(
@@ -244,3 +269,4 @@ function stopTracking(){
 
 </body>
 </html>
+
