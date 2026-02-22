@@ -22,6 +22,10 @@
       box-shadow:0 2px 4px rgba(0,0,0,0.1);
     }
     h4 { margin-top:20px; }
+    #roleIndicator {
+      font-weight:bold;
+      margin-bottom:10px;
+    }
   </style>
 </head>
 
@@ -32,12 +36,14 @@
 <div id="panel">
   <h3>🚀 Torre de Control</h3>
 
+  <div id="roleIndicator"></div>
+
   <button onclick="startTracking()">Iniciar seguimiento</button>
   <button onclick="stopTracking()">Detener seguimiento</button>
 
   <hr>
 
-  <h4>📊 Análisis Automático</h4>
+  <h4>📊 Análisis</h4>
   <div id="analysis"></div>
 
   <button onclick="exportCSV()">Exportar CSV</button>
@@ -73,6 +79,9 @@ let lastPoints = {};
 let heatPoints = [];
 let watchId = null;
 
+let userRole = null;
+let currentUserId = null;
+
 const MIN_DISTANCE_METERS = 5;
 
 function initMap() {
@@ -84,10 +93,93 @@ function initMap() {
 
 window.onload = function(){
   initMap();
+  loadRole();
   listenLocations();
 };
 
+function loadRole(){
+  userRole = localStorage.getItem("role");
+  currentUserId = localStorage.getItem("deviceId");
+
+  if(!userRole){
+    userRole = "user";
+  }
+
+  document.getElementById("roleIndicator").innerHTML =
+    userRole === "master" ? "👑 MASTER ACTIVO" : "👤 Modo Usuario";
+}
+
+function startTracking(){
+
+  currentUserId = localStorage.getItem("deviceId") || crypto.randomUUID();
+  localStorage.setItem("deviceId", currentUserId);
+
+  let savedRole = localStorage.getItem("role");
+
+  if(!savedRole){
+    const key = prompt("Ingrese KEY MASTER si aplica o deje vacío:");
+
+    if(key === "MASTER2026"){
+      userRole = "master";
+    } else {
+      userRole = "user";
+    }
+
+    localStorage.setItem("role", userRole);
+  } else {
+    userRole = savedRole;
+  }
+
+  loadRole();
+
+  const userName = prompt("Nombre usuario:");
+  const today = new Date().toISOString().split("T")[0];
+
+  watchId = navigator.geolocation.watchPosition(async pos => {
+
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    const now = new Date();
+
+    if(lastPoints[currentUserId]){
+      const dist = google.maps.geometry.spherical.computeDistanceBetween(
+        new google.maps.LatLng(lastPoints[currentUserId].lat,lastPoints[currentUserId].lng),
+        new google.maps.LatLng(lat,lng)
+      );
+      if(dist < MIN_DISTANCE_METERS) return;
+    }
+
+    lastPoints[currentUserId] = {lat,lng};
+
+    await db.collection("routes")
+      .doc(currentUserId)
+      .collection(today)
+      .add({lat,lng,timestamp:now});
+
+    await db.collection("locations")
+      .doc(currentUserId)
+      .set({
+        lat,
+        lng,
+        user:userName,
+        timestamp:now
+      });
+
+  },
+  error => alert(error.message),
+  { enableHighAccuracy:true });
+
+}
+
+function stopTracking(){
+  if(watchId){
+    navigator.geolocation.clearWatch(watchId);
+    watchId=null;
+  }
+}
+
 function listenLocations(){
+
   const today = new Date().toISOString().split("T")[0];
 
   db.collection("locations").onSnapshot(snapshot=>{
@@ -96,6 +188,11 @@ function listenLocations(){
     heatPoints = [];
 
     snapshot.forEach(doc=>{
+
+      if(userRole !== "master" && doc.id !== currentUserId){
+        return;
+      }
+
       const data = doc.data();
       const pos = {lat:data.lat,lng:data.lng};
 
@@ -164,20 +261,30 @@ function listenLocations(){
 }
 
 function updateHeatmap(){
+  if(userRole !== "master") return;
+
   if(heatmap){
     heatmap.setMap(null);
   }
+
   heatmap = new google.maps.visualization.HeatmapLayer({
     data: heatPoints,
     radius: 30
   });
+
   heatmap.setMap(map);
 }
 
 function updatePanel(){
   const container=document.getElementById("devices");
   container.innerHTML="";
+
   for(let id in distances){
+
+    if(userRole !== "master" && id !== currentUserId){
+      continue;
+    }
+
     container.innerHTML+=`
       <div class="card">
         <b>${id.substring(0,6)}</b><br>
@@ -187,7 +294,12 @@ function updatePanel(){
 }
 
 function updateAnalysis(){
-  const analysis=document.getElementById("analysis");
+
+  if(userRole !== "master"){
+    document.getElementById("analysis").innerHTML="Modo usuario activo";
+    return;
+  }
+
   let totalGeneral=0;
   let ranking=[];
 
@@ -206,10 +318,15 @@ function updateAnalysis(){
     html+=`${r.id.substring(0,6)} - ${r.km.toFixed(2)} km<br>`;
   });
 
-  analysis.innerHTML=html;
+  document.getElementById("analysis").innerHTML=html;
 }
 
 function exportCSV(){
+  if(userRole !== "master"){
+    alert("Solo el MASTER puede exportar.");
+    return;
+  }
+
   let csv="Usuario,KM\n";
   for(let id in distances){
     csv+=`${id},${distances[id].toFixed(2)}\n`;
@@ -223,7 +340,11 @@ function exportCSV(){
   a.click();
 }
 
-async function exportGeoJSON(){
+function exportGeoJSON(){
+  if(userRole !== "master"){
+    alert("Solo el MASTER puede exportar.");
+    return;
+  }
 
   let features=[];
 
@@ -266,57 +387,7 @@ async function exportGeoJSON(){
   a.click();
 }
 
-function startTracking(){
-  const deviceId=localStorage.getItem("deviceId")||crypto.randomUUID();
-  localStorage.setItem("deviceId",deviceId);
-
-  const userName=prompt("Nombre usuario:");
-  const today=new Date().toISOString().split("T")[0];
-
-  watchId=navigator.geolocation.watchPosition(async pos=>{
-
-    const lat=pos.coords.latitude;
-    const lng=pos.coords.longitude;
-    const now=new Date();
-
-    if(lastPoints[deviceId]){
-      const dist=google.maps.geometry.spherical.computeDistanceBetween(
-        new google.maps.LatLng(lastPoints[deviceId].lat,lastPoints[deviceId].lng),
-        new google.maps.LatLng(lat,lng)
-      );
-      if(dist<MIN_DISTANCE_METERS)return;
-    }
-
-    lastPoints[deviceId]={lat,lng};
-
-    await db.collection("routes")
-      .doc(deviceId)
-      .collection(today)
-      .add({lat,lng,timestamp:now});
-
-    await db.collection("locations")
-      .doc(deviceId)
-      .set({lat,lng,user:userName,timestamp:now});
-
-  },
-  error=>{
-    alert(error.message);
-  },
-  { enableHighAccuracy:true });
-
-}
-
-function stopTracking(){
-  if(watchId){
-    navigator.geolocation.clearWatch(watchId);
-    watchId=null;
-  }
-}
-
 </script>
 
 </body>
 </html>
-
-
-
