@@ -14,6 +14,12 @@
       width: 100%;
       margin-top: 20px;
     }
+
+    button {
+      margin-right: 10px;
+      padding: 8px 12px;
+      font-size: 14px;
+    }
   </style>
 </head>
 
@@ -21,14 +27,15 @@
 
   <h2>Torre de Control - Seguimiento GPS</h2>
   <button onclick="startTracking()">Iniciar seguimiento</button>
+  <button onclick="stopTracking()">Detener seguimiento</button>
   <p id="status"></p>
   <div id="map"></div>
 
-  <!-- 🔥 Firebase -->
+  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
-  <!-- 🔥 Google Maps (TU NUEVA KEY SOLO DE MAPS) -->
+  <!-- Google Maps (KEY SOLO DE MAPS) -->
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDwgCjC6tC56l1xEGHwW3vzXtLM2nXR7ck"></script>
 
   <script>
@@ -48,8 +55,9 @@
 
     let map;
     let markers = {};
+    let watchId = null;
 
-    // 🔥 INICIALIZAR MAPA
+    // Inicializar mapa
     function initMap() {
       map = new google.maps.Map(document.getElementById("map"), {
         center: { lat: 0, lng: 0 },
@@ -57,11 +65,11 @@
       });
     }
 
-    // Esperar a que la página cargue completamente
+    // Cargar mapa y activar listener
     window.onload = function () {
       initMap();
 
-      // 🔥 LISTENER EN TIEMPO REAL
+      // 🔥 Escuchar todos los dispositivos en tiempo real
       db.collection("locations").onSnapshot((snapshot) => {
 
         snapshot.forEach((doc) => {
@@ -84,27 +92,33 @@
       });
     };
 
-    // 🔥 BOTÓN
+    // 🔥 INICIAR SEGUIMIENTO AUTOMÁTICO
     function startTracking() {
 
       const status = document.getElementById("status");
-      status.innerText = "Solicitando ubicación...";
+
+      if (watchId !== null) {
+        status.innerText = "🛰️ Seguimiento ya está activo.";
+        return;
+      }
 
       if (!navigator.geolocation) {
         status.innerText = "Geolocalización no soportada.";
         return;
       }
 
-      navigator.geolocation.getCurrentPosition(
+      const deviceId = localStorage.getItem("deviceId") 
+        || crypto.randomUUID();
+
+      localStorage.setItem("deviceId", deviceId);
+
+      status.innerText = "🛰️ Seguimiento automático activo...";
+
+      watchId = navigator.geolocation.watchPosition(
         async (position) => {
 
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
-
-          const deviceId = localStorage.getItem("deviceId") 
-            || crypto.randomUUID();
-
-          localStorage.setItem("deviceId", deviceId);
 
           await db.collection("locations").doc(deviceId).set({
             lat: lat,
@@ -112,25 +126,35 @@
             timestamp: new Date()
           });
 
-          status.innerText = `✅ Ubicación enviada`;
-
           map.setCenter({ lat, lng });
           map.setZoom(15);
 
         },
         (error) => {
           console.error(error);
-          status.innerText = "❌ Error obteniendo ubicación.";
+          status.innerText = "❌ Error en seguimiento.";
         },
         {
           enableHighAccuracy: true,
-          timeout: 30000
+          maximumAge: 0
         }
       );
+    }
+
+    // 🔥 DETENER SEGUIMIENTO
+    function stopTracking() {
+      const status = document.getElementById("status");
+
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        status.innerText = "⏹️ Seguimiento detenido.";
+      } else {
+        status.innerText = "No hay seguimiento activo.";
+      }
     }
 
   </script>
 
 </body>
 </html>
-
