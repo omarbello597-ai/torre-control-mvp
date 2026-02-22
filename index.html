@@ -44,7 +44,7 @@
 <script>
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBQw9PUFPMny8jAHnjEAjnQS7Qo8dvEIfw",
+  apiKey: "TU_API_KEY",
   authDomain: "torrecontrolmvp.firebaseapp.com",
   projectId: "torrecontrolmvp"
 };
@@ -58,6 +58,7 @@ let polylines = {};
 let deviceColors = {};
 let distances = {};
 let lastPoints = {};
+let deviceNames = {};
 let watchId = null;
 
 const MIN_DISTANCE_METERS = 5;
@@ -84,9 +85,20 @@ window.onload=function(){
   const today=new Date().toISOString().split("T")[0];
 
   db.collection("locations").onSnapshot(snapshot=>{
+
+    if(snapshot.empty) return;
+
+    const bounds = new google.maps.LatLngBounds();
+    let activeUsers = 0;
+
     snapshot.forEach(doc=>{
       const data=doc.data();
       const pos={lat:data.lat,lng:data.lng};
+
+      activeUsers++;
+      bounds.extend(pos);
+
+      deviceNames[doc.id] = data.user || "User";
 
       if(!deviceColors[doc.id])
         deviceColors[doc.id]=generateColorFromId(doc.id);
@@ -99,7 +111,12 @@ window.onload=function(){
         markers[doc.id]=new google.maps.Marker({
           position:pos,
           map:map,
-          label:data.user || "User",
+          title:data.user,
+          label:{
+            text:data.user || "User",
+            fontSize:"12px",
+            fontWeight:"bold"
+          },
           icon:{
             path:google.maps.SymbolPath.CIRCLE,
             scale:8,
@@ -150,6 +167,15 @@ window.onload=function(){
       }
 
     });
+
+    // ZOOM INTELIGENTE
+    if(activeUsers === 1){
+      map.fitBounds(bounds);
+      setTimeout(()=> map.setZoom(18), 300);
+    } else if(activeUsers > 1){
+      map.fitBounds(bounds);
+    }
+
   });
 };
 
@@ -159,7 +185,7 @@ function updatePanel(){
   for(let id in distances){
     container.innerHTML+=`
       <div class="card">
-        <b>${id.substring(0,6)}</b><br>
+        <b>${deviceNames[id] || id.substring(0,6)}</b><br>
         Distancia hoy: ${distances[id].toFixed(2)} km
       </div>`;
   }
@@ -169,7 +195,12 @@ function startTracking(){
   const deviceId=localStorage.getItem("deviceId")||crypto.randomUUID();
   localStorage.setItem("deviceId",deviceId);
 
-  const userName=prompt("Ingrese nombre del usuario:");
+  let userName=localStorage.getItem("userName");
+  if(!userName){
+    userName=prompt("Ingrese nombre del usuario:");
+    localStorage.setItem("userName",userName);
+  }
+
   const today=new Date().toISOString().split("T")[0];
 
   watchId=navigator.geolocation.watchPosition(async pos=>{
@@ -195,7 +226,11 @@ function startTracking(){
     await db.collection("locations")
       .doc(deviceId)
       .set({lat,lng,timestamp:now,user:userName});
-  });
+  },
+  error=>{
+    alert("Error obteniendo ubicación: " + error.message);
+  },
+  { enableHighAccuracy:true });
 }
 
 function stopTracking(){
