@@ -1,22 +1,41 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Torre Control GPS</title>
+  <title>Torre Control Comercial</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { font-family: Arial; }
-    #map { height: 400px; width: 100%; margin-top: 20px; }
-    button { margin-right: 10px; padding: 8px 12px; }
+    body { margin:0; font-family: Arial; display:flex; }
+    #map { flex: 3; height:100vh; }
+    #panel {
+      flex:1;
+      background:#f4f4f4;
+      padding:15px;
+      overflow-y:auto;
+      border-left:1px solid #ccc;
+    }
+    button { padding:8px; margin-bottom:10px; width:100%; }
+    .card {
+      background:white;
+      padding:10px;
+      margin-bottom:10px;
+      border-radius:8px;
+      box-shadow:0 2px 4px rgba(0,0,0,0.1);
+    }
   </style>
 </head>
 
 <body>
 
-<h2>Torre de Control - Seguimiento GPS</h2>
-<button onclick="startTracking()">Iniciar seguimiento</button>
-<button onclick="stopTracking()">Detener seguimiento</button>
-<p id="status">Estado: Esperando acción...</p>
 <div id="map"></div>
+
+<div id="panel">
+  <h3>🚀 Torre de Control</h3>
+  <button onclick="startTracking()">Iniciar seguimiento</button>
+  <button onclick="stopTracking()">Detener seguimiento</button>
+  <p id="status">Estado: Esperando...</p>
+  <hr>
+  <div id="devices"></div>
+</div>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -37,168 +56,152 @@ let map;
 let markers = {};
 let polylines = {};
 let deviceColors = {};
+let distances = {};
+let lastPoints = {};
 let watchId = null;
 
-let firstFix = true;
-let lastPosition = null;
-const MIN_DISTANCE_METERS = 10;
+const MIN_DISTANCE_METERS = 5;
 
 function initMap() {
   map = new google.maps.Map(document.getElementById("map"), {
-    center: { lat: 0, lng: 0 },
-    zoom: 2,
+    center:{lat:0,lng:0},
+    zoom:2
   });
 }
 
-// 🎨 Generar color estable basado en deviceId
 function generateColorFromId(id) {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  let hash=0;
+  for(let i=0;i<id.length;i++){
+    hash=id.charCodeAt(i)+((hash<<5)-hash);
   }
-  const color = "#" + ((hash >> 24) & 0xFF).toString(16).padStart(2,"0")
-                    + ((hash >> 16) & 0xFF).toString(16).padStart(2,"0")
-                    + ((hash >> 8) & 0xFF).toString(16).padStart(2,"0");
-  return color;
+  return "#"+((hash>>24)&0xFF).toString(16).padStart(2,"0")
+           +((hash>>16)&0xFF).toString(16).padStart(2,"0")
+           +((hash>>8)&0xFF).toString(16).padStart(2,"0");
 }
 
-window.onload = function () {
+window.onload=function(){
   initMap();
+  const today=new Date().toISOString().split("T")[0];
 
-  const today = new Date().toISOString().split("T")[0];
+  db.collection("locations").onSnapshot(snapshot=>{
+    snapshot.forEach(doc=>{
+      const data=doc.data();
+      const pos={lat:data.lat,lng:data.lng};
 
-  db.collection("locations").onSnapshot(snapshot => {
-    snapshot.forEach(doc => {
+      if(!deviceColors[doc.id])
+        deviceColors[doc.id]=generateColorFromId(doc.id);
 
-      const data = doc.data();
-      if (!data.lat || !data.lng) return;
+      const color=deviceColors[doc.id];
 
-      const pos = { lat: data.lat, lng: data.lng };
-
-      if (!deviceColors[doc.id]) {
-        deviceColors[doc.id] = generateColorFromId(doc.id);
-      }
-
-      const color = deviceColors[doc.id];
-
-      if (markers[doc.id]) {
+      if(markers[doc.id]){
         markers[doc.id].setPosition(pos);
-      } else {
-        markers[doc.id] = new google.maps.Marker({
-          position: pos,
-          map: map,
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 8,
-            fillColor: color,
-            fillOpacity: 1,
-            strokeWeight: 1
+      }else{
+        markers[doc.id]=new google.maps.Marker({
+          position:pos,
+          map:map,
+          label:data.user || "User",
+          icon:{
+            path:google.maps.SymbolPath.CIRCLE,
+            scale:8,
+            fillColor:color,
+            fillOpacity:1,
+            strokeWeight:1
           }
         });
       }
 
-      if (!polylines[doc.id]) {
+      if(!polylines[doc.id]){
         db.collection("routes")
-          .doc(doc.id)
-          .collection(today)
-          .orderBy("timestamp")
-          .onSnapshot(routeSnap => {
+        .doc(doc.id)
+        .collection(today)
+        .orderBy("timestamp")
+        .onSnapshot(routeSnap=>{
+          let path=[];
+          let total=0;
+          let prev=null;
 
-            let path = [];
-            routeSnap.forEach(pointDoc => {
-              const p = pointDoc.data();
-              path.push({ lat: p.lat, lng: p.lng });
-            });
-
-            if (polylines[doc.id]) {
-              polylines[doc.id].setPath(path);
-            } else {
-              polylines[doc.id] = new google.maps.Polyline({
-                path: path,
-                geodesic: true,
-                strokeColor: color,
-                strokeOpacity: 1,
-                strokeWeight: 3,
-                map: map
-              });
+          routeSnap.forEach(p=>{
+            const pt=p.data();
+            path.push({lat:pt.lat,lng:pt.lng});
+            if(prev){
+              total+=google.maps.geometry.spherical.computeDistanceBetween(
+                new google.maps.LatLng(prev.lat,prev.lng),
+                new google.maps.LatLng(pt.lat,pt.lng)
+              );
             }
-
+            prev=pt;
           });
+
+          distances[doc.id]=total/1000;
+
+          if(polylines[doc.id]){
+            polylines[doc.id].setPath(path);
+          }else{
+            polylines[doc.id]=new google.maps.Polyline({
+              path:path,
+              strokeColor:color,
+              strokeWeight:3,
+              map:map
+            });
+          }
+
+          updatePanel();
+        });
       }
 
     });
   });
 };
 
-function startTracking() {
-
-  const status = document.getElementById("status");
-
-  if (watchId !== null) {
-    status.innerText = "🛰️ Seguimiento ya activo.";
-    return;
+function updatePanel(){
+  const container=document.getElementById("devices");
+  container.innerHTML="";
+  for(let id in distances){
+    container.innerHTML+=`
+      <div class="card">
+        <b>${id.substring(0,6)}</b><br>
+        Distancia hoy: ${distances[id].toFixed(2)} km
+      </div>`;
   }
+}
 
-  const deviceId = localStorage.getItem("deviceId") 
-    || crypto.randomUUID();
+function startTracking(){
+  const deviceId=localStorage.getItem("deviceId")||crypto.randomUUID();
+  localStorage.setItem("deviceId",deviceId);
 
-  localStorage.setItem("deviceId", deviceId);
+  const userName=prompt("Ingrese nombre del usuario:");
+  const today=new Date().toISOString().split("T")[0];
 
-  status.innerText = "🛰️ Seguimiento activo...";
+  watchId=navigator.geolocation.watchPosition(async pos=>{
+    const lat=pos.coords.latitude;
+    const lng=pos.coords.longitude;
+    const now=new Date();
 
-  watchId = navigator.geolocation.watchPosition(async position => {
-
-    const lat = position.coords.latitude;
-    const lng = position.coords.longitude;
-    const now = new Date();
-    const today = now.toISOString().split("T")[0];
-    const currentPosition = { lat, lng };
-
-    if (lastPosition) {
-      const distance = google.maps.geometry.spherical.computeDistanceBetween(
-        new google.maps.LatLng(lastPosition.lat, lastPosition.lng),
-        new google.maps.LatLng(lat, lng)
+    if(lastPoints[deviceId]){
+      const dist=google.maps.geometry.spherical.computeDistanceBetween(
+        new google.maps.LatLng(lastPoints[deviceId].lat,lastPoints[deviceId].lng),
+        new google.maps.LatLng(lat,lng)
       );
-      if (distance < MIN_DISTANCE_METERS) return;
+      if(dist<MIN_DISTANCE_METERS)return;
     }
 
-    lastPosition = currentPosition;
-
-    if (firstFix) {
-      map.setCenter(currentPosition);
-      map.setZoom(16);
-      firstFix = false;
-    }
+    lastPoints[deviceId]={lat,lng};
 
     await db.collection("routes")
       .doc(deviceId)
       .collection(today)
-      .add({ lat, lng, timestamp: now });
+      .add({lat,lng,timestamp:now});
 
     await db.collection("locations")
       .doc(deviceId)
-      .set({ lat, lng, timestamp: now });
-
-  },
-  (error) => {
-    console.error(error);
-    status.innerText = "❌ Error GPS: " + error.message;
-  },
-  {
-    enableHighAccuracy: true,
-    maximumAge: 0,
-    timeout: 20000
+      .set({lat,lng,timestamp:now,user:userName});
   });
-
 }
 
-function stopTracking() {
-  if (watchId !== null) {
+function stopTracking(){
+  if(watchId){
     navigator.geolocation.clearWatch(watchId);
-    watchId = null;
-    firstFix = true;
-    lastPosition = null;
-    document.getElementById("status").innerText = "⏹️ Seguimiento detenido.";
+    watchId=null;
   }
 }
 
