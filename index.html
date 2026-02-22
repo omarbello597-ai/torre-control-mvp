@@ -35,12 +35,11 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
-  <!-- Google Maps (KEY SOLO DE MAPS) -->
+  <!-- Google Maps -->
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDwgCjC6tC56l1xEGHwW3vzXtLM2nXR7ck"></script>
 
   <script>
 
-    // 🔥 CONFIG FIREBASE
     const firebaseConfig = {
       apiKey: "AIzaSyBQw9PUFPMny8jAHnjEAjnQS7Qo8dvEIfw",
       authDomain: "torrecontrolmvp.firebaseapp.com",
@@ -57,7 +56,6 @@
     let markers = {};
     let watchId = null;
 
-    // Inicializar mapa
     function initMap() {
       map = new google.maps.Map(document.getElementById("map"), {
         center: { lat: 0, lng: 0 },
@@ -65,11 +63,10 @@
       });
     }
 
-    // Cargar mapa y activar listener
     window.onload = function () {
       initMap();
 
-      // 🔥 Escuchar todos los dispositivos en tiempo real
+      // 🔥 Listener para posiciones actuales
       db.collection("locations").onSnapshot((snapshot) => {
 
         snapshot.forEach((doc) => {
@@ -92,7 +89,6 @@
       });
     };
 
-    // 🔥 INICIAR SEGUIMIENTO AUTOMÁTICO
     function startTracking() {
 
       const status = document.getElementById("status");
@@ -120,10 +116,24 @@
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
 
+          const now = new Date();
+          const today = now.toISOString().split("T")[0];
+
+          // 🔥 Guardar punto en histórico por día
+          await db.collection("routes")
+            .doc(deviceId)
+            .collection(today)
+            .add({
+              lat: lat,
+              lng: lng,
+              timestamp: now
+            });
+
+          // 🔥 Actualizar posición actual
           await db.collection("locations").doc(deviceId).set({
             lat: lat,
             lng: lng,
-            timestamp: new Date()
+            timestamp: now
           });
 
           map.setCenter({ lat, lng });
@@ -141,7 +151,6 @@
       );
     }
 
-    // 🔥 DETENER SEGUIMIENTO
     function stopTracking() {
       const status = document.getElementById("status");
 
@@ -158,3 +167,4 @@
 
 </body>
 </html>
+
